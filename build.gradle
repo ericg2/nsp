@@ -1,0 +1,24 @@
+plugins {
+    id 'java'
+}
+
+group 'com.houseofkraft'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
+    implementation 'com.github.rockaport:alice:0.9.0'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+    }
+}
