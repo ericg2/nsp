@@ -70,7 +70,8 @@ public class HandshakeExample {
 
 # Other Features
 There are many other features available than what was specified above as well to try out. You can check it out
-by looking at the JavaDoc or browing through the code!
+by looking at the JavaDoc or browing through the code! You can find the documentatin either in the `docs` folder,
+or at my website: https://houseofkraft.github.io/nsp/docs/
 
 ### Android Support
 This may be able to easily be converted to Android with none to very little modification, but no support is 
