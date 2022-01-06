@@ -101,10 +101,11 @@ public class AES {
 
     /** @return Parameter Spec */
     private AlgorithmParameterSpec getParameterSpec() {
-        return switch (options.getAlgorithm()) {
-            case CBC -> this.ivKey;
-            case GCM -> this.gcmSpec;
-        };
+        switch (options.getAlgorithm()) {
+            case CBC: return this.ivKey;
+            case GCM: return this.gcmSpec;
+            default: throw new IllegalArgumentException();
+        }
     }
 
     /**
@@ -168,11 +169,13 @@ public class AES {
         updateOptions(option);
 
         switch (this.options.getAlgorithm()) {
-            case CBC -> this.encryptAlgorithm = "AES/CBC/PKCS5Padding";
-            case GCM -> {
+            case CBC:
+                this.encryptAlgorithm = "AES/CBC/PKCS5Padding";
+                break;
+            case GCM:
                 this.encryptAlgorithm = "AES/GCM/NoPadding";
                 this.gcmSpec = new GCMParameterSpec(16 * 8, ivKey.getIV());
-            }
+                break;
         }
     }
 

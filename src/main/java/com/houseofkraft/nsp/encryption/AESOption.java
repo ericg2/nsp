@@ -22,6 +22,7 @@ import com.houseofkraft.nsp.networking.NSPHeader;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -131,9 +132,11 @@ public class AESOption {
      * @throws IOException If there was an issue reading the file.
      */
     private boolean readKeyFile(File fileObject) throws IOException {
-        FileInputStream fis = new FileInputStream(fileObject);
-        
-        byte[] keyFileBytes = fis.readAllBytes();
+        DataInputStream fis = new DataInputStream(new FileInputStream(fileObject));
+
+        byte[] keyFileBytes = new byte[(int)fileObject.length()];
+        fis.readFully(keyFileBytes);
+
         byte recordSeparator = NSPHeader.RECORD_SEPARATOR.toByte();
         byte groupSeparator = NSPHeader.GROUP_SEPARATOR.toByte();
         int privateKeyStart = -1;

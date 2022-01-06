@@ -228,20 +228,6 @@ public class NSP {
     }
 
     /**
-     * @return Synchronized Client List
-     * @throws GeneralSecurityException If there is an encryption error.
-     * @throws IOException If there is a socket error.
-     */
-    public ArrayList<String> getClientListSync() throws GeneralSecurityException, IOException {
-        getClientList();
-        while (!updateClientList) {
-            Thread.onSpinWait();
-        }
-        updateClientList = false;
-        return options.getClientList();
-    }
-
-    /**
      * Initializes a connection to the Server to receive information about the handshake and timeout, then disconnect.
      * @param address Server Address
      * @param port Server Port
@@ -512,10 +498,10 @@ public class NSP {
                 String reason = packet.get("reason");
                 if (reason != null) {
                     switch (reason) {
-                        case "blacklist" -> banned = true;
-                        case "whitelist" -> whitelisted = true;
-                        case "maximum connections reached" -> connectMax = true;
-                        case "exceeding maximum ip connections" -> ipMax = true;
+                        case "blacklist": banned = true; break;
+                        case "whitelist": whitelisted = true; break;
+                        case "maximum connections reached": connectMax = true; break;
+                        case "exceeding maximum ip connections": ipMax = true; break;
                     }
                 }
             } else {
@@ -523,24 +509,27 @@ public class NSP {
                     if (status.contains("cli-")) {
                         clientList.add(value);
                     }
+                    // Parse the String values into their respective types, and move it into the proper variable
+                    // based on the type.
                     switch (status) {
-                        // Parse the String values into their respective types, and move it into the proper variable
-                        // based on the type.
-                        case "online" -> this.totalOnline = Integer.parseInt(value);
-                        case "max-user" -> this.maxUsers = Integer.parseInt(value);
-                        case "max-con" -> this.maxConcurrent = Integer.parseInt(value);
-                        case "compression" -> this.deflateLevel = Integer.parseInt(value);
-                        case "encryption" -> this.cryptEnabled = Boolean.parseBoolean(value);
-                        case "whitelist" -> this.whiteListEnabled = Boolean.parseBoolean(value);
-                        case "blacklist" -> this.blackListEnabled = Boolean.parseBoolean(value);
-                        case "hide-ip" -> this.hideIP = Boolean.parseBoolean(value);
-                        case "keep-alive" -> this.keepAlive = Integer.parseInt(value);
-                        case "client-list" -> {
+                        case "online": this.totalOnline = Integer.parseInt(value); break;
+                        case "max-user": this.maxUsers = Integer.parseInt(value); break;
+                        case "max-con": this.maxConcurrent = Integer.parseInt(value); break;
+                        case "compression": this.deflateLevel = Integer.parseInt(value); break;
+                        case "encryption": this.cryptEnabled = Boolean.parseBoolean(value); break;
+                        case "whitelist": this.whiteListEnabled = Boolean.parseBoolean(value); break;
+                        case "blacklist": this.blackListEnabled = Boolean.parseBoolean(value); break;
+                        case "hide-ip": this.hideIP = Boolean.parseBoolean(value); break;
+                        case "keep-alive": this.keepAlive = Integer.parseInt(value); break;
+                        case "client-list":
                             switch (value) {
-                                case "empty" -> {}
-                                case "non-disclose" -> discloseClient = false;
+                                case "empty":
+                                    break;
+                                case "non-disclose":
+                                    discloseClient = false;
+                                    break;
                             }
-                        }
+                            break;
                     }
                 });
             }
@@ -584,20 +573,22 @@ public class NSP {
                     HashMap<String, String> packet = Messages.readMessageString(dis, parser);
                     if (packet != null && packet.size() > 0) {
                         if (packet.containsKey(STATUS.toString())) {
-                            switch (packet.get(STATUS.toString())) {
-                                case "disconnect" -> socketClose(getSafeValue(packet, "reason"));
-                                case "client-connect" -> {
-                                    String identifier = getSafeValue(packet, "identifier");
-                                    listeners.forEach(listeners -> listeners.clientConnected(identifier));
-                                }
-                                case "client-disconnect" -> {
-                                    String identifier = getSafeValue(packet, "identifier");
-                                    String reason = getSafeValue(packet, "reason");
-                                    listeners.forEach(listeners -> listeners.clientDisconnected(identifier, reason));
-                                }
+                            String identifier = getSafeValue(packet, "identifier");
+                            String reason = getSafeValue(packet, "reason");
 
-                                case "client-list-success" -> {
-                                    // This would most likely be initialized from the getClientList method.
+                            switch (packet.get(STATUS.toString())) {
+                                case "disconnect":
+                                    socketClose(reason);
+                                    break;
+                                case "client-connect":
+                                    listeners.forEach(listeners -> listeners.clientConnected(identifier));
+                                    break;
+                                case "client-disconnect":
+                                    listeners.forEach(listeners -> listeners.clientDisconnected(identifier, reason));
+                                    break;
+
+                                // This would most likely be initialized from the getClientList method.
+                                case "client-list-success":
                                     ArrayList<String> newClientList = new ArrayList<>();
                                     packet.forEach((key, value) -> {
                                         if (key.contains("cli-")) {
@@ -609,11 +600,10 @@ public class NSP {
                                     }
                                     updateClientList = true;
                                     listeners.forEach(listener -> listener.clientListUpdate(newClientList));
-                                }
-                                default -> {
-                                    String identifier = (packet.get("identifier") != null) ? packet.get("identifier") : "";
+                                    break;
+                                default:
                                     listeners.forEach(listener -> listener.messageReceived(identifier, packet));
-                                }
+                                    break;
                             }
                         } else {
                             // Relay the message to the NSPListeners and attempt to get the original Identifier.

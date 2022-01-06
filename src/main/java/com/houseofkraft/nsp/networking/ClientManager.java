@@ -70,8 +70,10 @@ public class ClientManager extends Thread {
 
                     if (packet.containsKey(NSPHeader.Message.STATUS.toString())) {
                         switch (packet.get(NSPHeader.Message.STATUS.toString())) {
-                            case "disconnect" -> close(NSPHeader.Message.DISCONNECT.toString());
-                            case "client-list" -> {
+                            case "disconnect":
+                                close(NSPHeader.Message.DISCONNECT.toString());
+                                break;
+                            case "client-list":
                                 if (NSPServer.option.getDiscloseClientList()) {
                                     // Send the Preferred Client List
                                     AtomicInteger counter = new AtomicInteger(0);
@@ -85,9 +87,10 @@ public class ClientManager extends Thread {
                                     response.addEntry(NSPHeader.Message.STATUS.toString(), "client-list-fail")
                                             .addEntry("identifier", "system");
                                 }
-                            }
-                            case "hostname" -> {
-                                // Check to see if there is another Packet entry for the hostname value.
+                                break;
+
+                            // Check to see if there is another Packet entry for the hostname value.
+                            case "hostname":
                                 String newHostname = packet.get("hostname");
                                 if (!newHostname.equals("")) {
                                     // Change the hostname, and set the preferred ID to hostname mode if not done already.
@@ -97,27 +100,28 @@ public class ClientManager extends Thread {
                                     response.addEntry(NSPHeader.Message.STATUS.toString(), "hostname-change-success")
                                             .addEntry("identifier", "system");
                                 }
-                            }
+                                break;
 
-                            case "id-mode" -> {
-                                // Set the Preferred ID to Hostname Mode
+                            // Set the Preferred ID to Hostname Mode
+                            case "id-mode":
                                 client.setIDMode(true);
                                 response.addEntry(NSPHeader.Message.STATUS.toString(), "id-change-success")
                                         .addEntry("identifier", "system");
-                            }
-
-                            case "ip-mode" -> {
+                                break;
+                            case "ip-mode":
                                 client.setIDMode(false);
                                 response.addEntry(NSPHeader.Message.STATUS.toString(), "ip-change-success")
                                         .addEntry("identifier", "system");
-                            }
-
-                            case "get-id" -> response.addEntry(NSPHeader.Message.STATUS.toString(), "id-request-success")
-                                    .addEntry("identifier", "system")
-                                    .addEntry("id", client.getID());
-
-                            case "keep-alive" -> response.addEntry(NSPHeader.Message.STATUS.toString(), "keep-alive-success")
-                                    .addEntry("identifier", "system");
+                                break;
+                            case "get-id":
+                                response.addEntry(NSPHeader.Message.STATUS.toString(), "id-request-success")
+                                        .addEntry("identifier", "system")
+                                        .addEntry("id", client.getID());
+                                break;
+                            case "keep-alive":
+                                response.addEntry(NSPHeader.Message.STATUS.toString(), "keep-alive-success")
+                                        .addEntry("identifier", "system");
+                                break;
                         }
                     } else if (packet.containsKey("ssnp-sender")) {
                         // Attempt to look up the preferred identifier of the Client.
