@@ -2,7 +2,7 @@ package com.houseofkraft.nsp.networking;
 
 /*
  * Next Socket Protocol Server
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,12 +35,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.Deflater;
 
+import static com.houseofkraft.nsp.networking.NSPHeader.Message.*;
+
 public class NSPServer {
     protected static volatile ServerOption option;
     protected static volatile Queue<Client> clientList;
     protected static volatile ArrayList<ServerListener> serverListeners;
     protected static volatile ServerSocket server;
     protected static volatile PacketParser parser;
+    protected static volatile HashMap<String, String> appendHandshake;
+
     public static volatile ArrayList<InternalListener> internalListeners;
     public static int keepAlive;
 
@@ -50,24 +54,29 @@ public class NSPServer {
     /**
      * Broadcasts a ByteArray to every Client that is currently connected.
      * @param sendBytes ByteArray To Send
+     * @return NSPServer Instance
      */
     public NSPServer broadcast(byte[] sendBytes) { clientList.forEach((k -> k.sendMessage(sendBytes))); return this; }
 
     /**
      * Broadcasts a ByteArray to a specified List of Clients.
      * @param sendBytes ByteArray To Send
+     * @param group List Containing Client Object Group
+     * @return NSPServer Instance
      */
     public NSPServer broadcast(byte[] sendBytes, List<Client> group) { group.forEach((k) -> k.sendMessage(sendBytes)); return this; }
 
     /**
      * Enables Incoming Connections by Activating the ConnectionActivator Thread.
      * @see #connectManagerThread
+     * @return NSPServer Instance
      */
     public NSPServer allowIncoming() { if (acceptorThread.isInterrupted()) { acceptorThread.start(); } return this; }
 
     /**
      * Disables Incoming Connections by Deactivating the ConnectionActivator Thread.
      * @see #connectManagerThread
+     * @return NSPServer Instance
      */
     public NSPServer denyIncoming() { if (!acceptorThread.isInterrupted()) { acceptorThread.interrupt(); } return this; }
 
@@ -79,8 +88,17 @@ public class NSPServer {
      * is a new message. This is fully asynchronous and doesn't require any blocking methods.
      *
      * @param listener ServerListener Object
+     * @return NSPServer Instance
      */
     public NSPServer addListener(ServerListener listener) { serverListeners.add(listener); return this; }
+
+    /**
+     * Appends the specified HashMap into the Packet that is sent when doing the initial Handshake, and will be shown
+     * to any Clients that are connecting to the Server.
+     * @param handshake String HashMap to Append to Handshake
+     * @return NSPServer Instance
+     */
+    public NSPServer setCustomHandshake(HashMap<String, String> handshake) { appendHandshake = handshake; return this; }
 
     /**
      * Updates the built-in PacketParser used for properly decoding incoming Packets. This sets the proper encryption,
@@ -105,27 +123,33 @@ public class NSPServer {
      * and global ConnectionManager Threads.
      *
      * @throws IOException If there are any errors related to starting the Server.
+     * @return NSPServer Instance
      */
     public NSPServer bind() throws IOException {
         server = new ServerSocket(option.getPort());
         keepAlive = option.getKeepAlive();
+
         this.acceptorThread = new SocketAcceptor();
         this.acceptorThread.start();
 
         this.connectManagerThread = new ConnectionManager();
         this.connectManagerThread.start();
         updateParser();
+
+        serverListeners.forEach(ServerListener::serverConnected);
         return this;
     }
 
     /**
      * Disconnects all the Clients from the Server, and then closes the ServerSocket.
      * @throws IOException If there are any errors while closing the Server.
+     * @return NSPServer Instance
      */
-    public void close() throws IOException {
+    public NSPServer close() throws IOException {
         clientList.forEach(Client::kick);
         serverListeners.forEach(ServerListener::serverDisconnected);
         server.close();
+        return this;
     }
 
     /**
@@ -227,12 +251,15 @@ public class NSPServer {
         clientList = new ConcurrentLinkedQueue<>();
         parser = new PacketParser();
         internalListeners = new ArrayList<>();
+        appendHandshake = new HashMap<>();
+
         updateParser();
 
         // Add a custom listener used for when clients are connected and disconnected to announce publicly.
         addListener(new ServerListener() {
             @Override public void messageReceived(Client client, HashMap<String, String> packet) {}
             @Override public void serverDisconnected() {}
+            @Override public void serverConnected() {}
 
             @Override
             public void clientConnected(Client client) {
@@ -240,7 +267,7 @@ public class NSPServer {
                     if (NSPServer.option.getAnnounceClientActions()) {
                         // Send a message to any connected Clients telling about the connection
                         broadcast(new ModifiedPacket()
-                                .addEntry(NSPHeader.Message.STATUS.toString(), "client-connect")
+                                .addEntry(STATUS.toString(), "client-connect")
                                 .addEntry("identifier", client.getIdentifier(true))
                                 .parseBytes());
                     }
@@ -253,7 +280,7 @@ public class NSPServer {
                     if (NSPServer.option.getAnnounceClientActions()) {
                         // Send a message to any connected Clients telling about the connection
                         broadcast(new ModifiedPacket()
-                                .addEntry(NSPHeader.Message.STATUS.toString(), "client-disconnect")
+                                .addEntry(STATUS.toString(), "client-disconnect")
                                 .addEntry("identifier", client.getIdentifier(true))
                                 .addEntry("reason", reason)
                                 .parseBytes());
@@ -292,7 +319,7 @@ class ConnectionActivator extends Thread {
     private void close(String reason) throws IOException, GeneralSecurityException {
         this.client.sendMessage(
                 new Packet()
-                        .addEntry(NSPHeader.Message.STATUS.toString(), NSPHeader.Message.DISCONNECT.toString())
+                        .addEntry(STATUS.toString(), DISCONNECT.toString())
                         .addEntry("reason", reason)
                         .parseBytes()
         );
@@ -305,11 +332,16 @@ class ConnectionActivator extends Thread {
     public void run() {
         try {
             // Make sure the client should be allowed to connect by checking whitelist, blacklist,
-            // max concurrent/total connections, etc.
+            // max concurrent/total connections, etc. Also, preload the variables to ensure these cannot be
+            // modified while the Handshake occurs.
             ArrayList<String> blackList = NSPServer.option.getBlackList();
             ArrayList<String> whiteList = NSPServer.option.getWhiteList();
+            HashMap<String, String> appendHandshake = NSPServer.appendHandshake;
+
             int maxUsers = NSPServer.option.getMaxUsers();
             int maxConcurrent = NSPServer.option.getMaxConcurrent();
+            boolean privateMode = NSPServer.option.getHiddenNetwork();
+
             this.client = new Client(socket);
 
             if (maxUsers > 0 && NSPServer.clientList.size() >= NSPServer.option.getMaxUsers()) {
@@ -337,25 +369,28 @@ class ConnectionActivator extends Thread {
             }
 
             // Start the handshake process by sending the public available information, without any
-            // encryption, compression, etc.
+            // encryption, compression, etc. If private mode is enabled, then skip the Handshake process and
+            // expect the encrypted response regardless.
             Packet infoPacket = new Packet()
                     .addEntry("online", String.valueOf(NSPServer.clientList.size()))
                     .addEntry("max-user", String.valueOf(maxUsers))
                     .addEntry("max-con", String.valueOf(maxConcurrent))
                     .addEntry("compression", String.valueOf(NSPServer.option.getDeflateLevel()))
                     .addEntry("encryption", String.valueOf(NSPServer.option.getEncryption() != null))
-                    .addEntry("whitelist", String.valueOf(whiteList != null))
-                    .addEntry("blacklist", String.valueOf(blackList != null))
+                    .addEntry("whitelist", String.valueOf(whiteList != null && whiteList.size()>0))
+                    .addEntry("blacklist", String.valueOf(blackList != null && blackList.size()>0))
                     .addEntry("keep-alive", String.valueOf(NSPServer.option.getKeepAlive()))
                     .addEntry("hide-ip", String.valueOf(NSPServer.option.isHideAllIP()));
+
+            appendHandshake.forEach(infoPacket::addEntry);
 
             // If the option to disclose the entire user-list is enabled, then add it to the Packet list.
             if (NSPServer.option.getDiscloseClientList()) {
                 if (NSPServer.clientList.size() > 0) {
                     AtomicInteger counter = new AtomicInteger(0);
                     NSPServer.getConnectedList().forEach((cli -> {
-                        infoPacket.addEntry("cli-"+counter, cli);
-                        counter.set(counter.get()+1);
+                        infoPacket.addEntry("cli-" + counter, cli);
+                        counter.set(counter.get() + 1);
                     }));
                 } else {
                     infoPacket.addEntry("client-list", "empty");
@@ -363,7 +398,10 @@ class ConnectionActivator extends Thread {
             } else {
                 infoPacket.addEntry("client-list", "non-disclose");
             }
-            client.sendMessage(infoPacket.parseBytes());
+
+            if (!privateMode) {
+                client.sendMessage(infoPacket.parseBytes());
+            }
 
             final boolean[] timerRunning = {true};
             HashMap<String, String> packet;
@@ -378,7 +416,7 @@ class ConnectionActivator extends Thread {
                 // Read all incoming messages, and if its properly formatted then it will be able to connect
                 packet = client.readMessageString(NSPServer.parser);
 
-                if (packet.containsKey(NSPHeader.Message.STATUS.toString()) && packet.containsValue(NSPHeader.Message.ACCEPT.toString())) {
+                if (packet.containsKey(STATUS.toString()) && packet.containsValue(ACCEPT.toString())) {
                     // Check if the client requests to use an ID, or if they want it custom.
                     if (packet.containsKey("identify") && packet.containsValue("id")) {
                         client.setIDMode(true);
@@ -391,13 +429,20 @@ class ConnectionActivator extends Thread {
                         }
                     }
 
+                    // If the connection was private, send the Handshake message encrypted after connecting.
+                    if (privateMode) {
+                        TimeUnit.MILLISECONDS.sleep(250);
+                        client.sendMessage(ModifiedPacket.toModified(infoPacket).parseBytes());
+                    }
+
                     // If the Client has accepted, create a new ClientManager instance and add to the list, then
                     // announce the Client has been connected to the ServerListeners.
                     client.resetKeepAlive();
                     NSPServer.clientList.add(client.setThread(new ClientManager(client)).startThread());
                     NSPServer.serverListeners.forEach((listener -> listener.clientConnected(client)));
                     timerRunning[0] = false;
-                } else if (packet.containsKey(NSPHeader.Message.STATUS.toString()) && packet.containsValue(NSPHeader.Message.DISCONNECT.toString())) {
+
+                } else if (packet.containsKey(STATUS.toString()) && packet.containsValue(DISCONNECT.toString())) {
                     client.getSocket().close();
                     timerRunning[0] = false;
                 }
@@ -407,8 +452,8 @@ class ConnectionActivator extends Thread {
             try {
                 // This typically means the Client has forcibly closed the connection without processing first.
                 close("disconnected");
-            } catch (Exception ignored) {}
-        } catch (GeneralSecurityException ignored) {}
+            } catch (IOException | GeneralSecurityException ignored) {}
+        } catch (GeneralSecurityException | InterruptedException ignored) {}
     }
 }
 
@@ -425,6 +470,16 @@ class ModifiedPacket extends Packet {
         this.setDeflateLevel(deflateLevel);
     }
 
+    public static Packet toModified(Packet packet) {
+        AES encryption = NSPServer.option.getEncryption();
+        int deflateLevel = NSPServer.option.getDeflateLevel();
+
+        if (encryption != null) { packet.setEncryption(encryption); }
+        packet.setDeflateLevel(deflateLevel);
+
+        return packet;
+    }
+
     public Packet toPacket() { return this; }
 }
 
@@ -438,47 +493,42 @@ class ConnectionManager extends Thread {
     public void run() {
         HashMap<ClientManager, String> queueClose = new HashMap<>();
         while (!isInterrupted()) {
-            // Queues a list of Connections that needs to be removed from the list at the end of looping through
-            // every Client, rather than instantly removing to prevent ConcurrentModificationException.
-            queueClose.clear();
-            NSPServer.clientList.forEach((cli -> {
-                if (cli.isBanned()) {
-                    ArrayList<String> blackList = NSPServer.option.getBlackList();
-                    blackList.add(cli.getIP(false));
-                    NSPServer.option.setBlackList(blackList);
-
-                    try {
-                        ClientManager thread = cli.getThread();
-                        thread.concurrentClose("banned");
-                        queueClose.put(thread, "banned");
-                    } catch (Exception ignored) {}
-                }
-                if (cli.isKicked()) {
-                    try {
-                        ClientManager thread = cli.getThread();
-                        thread.concurrentClose("kicked");
-                        queueClose.put(thread, "kicked");
-                    } catch (Exception ignored) {}
-                }
-                if (NSPServer.keepAlive > 0) {
-                    if (System.currentTimeMillis() > cli.getKeepAlive()) {
-                        try {
-                            ClientManager thread = cli.getThread();
-                            thread.concurrentClose("timed out");
-                            queueClose.put(thread, "timed out");
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }));
-
-            // If any clients were queued to be removed from the list, process now.
-            queueClose.forEach((cli, reason) -> {
-                NSPServer.clientList.remove(cli.getClient());
-                NSPServer.serverListeners.forEach((listener -> listener.clientDisconnected(cli.getClient(), reason)));
-                cli.interrupt();
-            });
-
             try {
+                // Queues a list of Connections that needs to be removed from the list at the end of looping through
+                // every Client, rather than instantly removing to prevent ConcurrentModificationException.
+                queueClose.clear();
+                NSPServer.clientList.forEach((cli -> {
+                    try {
+                        ClientManager thread = cli.getThread();
+
+                        if (cli.isBanned()) {
+                            ArrayList<String> blackList = NSPServer.option.getBlackList();
+                            blackList.add(cli.getIP(false));
+                            NSPServer.option.setBlackList(blackList);
+
+                            thread.concurrentClose("banned");
+                            queueClose.put(thread, "banned");
+                        }
+                        if (cli.isKicked()) {
+                            thread.concurrentClose("kicked");
+                            queueClose.put(thread, "kicked");
+                        }
+                        if (NSPServer.keepAlive > 0) {
+                            if (System.currentTimeMillis() > cli.getKeepAlive()) {
+                                thread.concurrentClose("timed out");
+                                queueClose.put(thread, "timed out");
+                            }
+                        }
+                    } catch (IOException | GeneralSecurityException ignored) {}
+                }));
+
+                // If any clients were queued to be removed from the list, process now.
+                queueClose.forEach((cli, reason) -> {
+                    NSPServer.clientList.remove(cli.getClient());
+                    NSPServer.serverListeners.forEach((listener -> listener.clientDisconnected(cli.getClient(), reason)));
+                    cli.interrupt();
+                });
+
                 TimeUnit.SECONDS.sleep(1);
             } catch (InterruptedException ignored) {}
         }
@@ -489,7 +539,7 @@ class SocketAcceptor extends Thread {
     /**
      * The SocketAcceptor is a low-level Thread made to simply wait for any Socket connection be activated, and
      * forwards it to the more complex ConnectionActivator Thread. This is made to free up resources in the Activator
-     * and only give it one job and allows for multi-threaded connecting.
+     * and only give it one job and allows for multithreaded connecting.
      */
     @Override
     public void run() {
@@ -504,4 +554,3 @@ class SocketAcceptor extends Thread {
         }
     }
 }
-

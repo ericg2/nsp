@@ -2,7 +2,7 @@ package com.houseofkraft.nsp.networking;
 
 /*
  * Server Options for Next Socket Protocol
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ public class ServerOption {
     private boolean announceClientActions = true;
     private boolean discloseClients = true;
     private boolean hideAllIP = false;
+    private boolean hiddenMode = false;
 
     private AES encryption = null;
     private ArrayList<String> whiteList = new ArrayList<>();
@@ -40,6 +41,12 @@ public class ServerOption {
 
     /** @return Disclose Client List */
     public boolean getDiscloseClientList() { return discloseClients; }
+
+    /** @return Hidden Network Mode **/
+    public boolean getHiddenNetwork() { return hiddenMode; }
+
+    /** Sets Hidden Network Mode */
+    public ServerOption setHiddenNetwork(boolean hidden) { this.hiddenMode = hidden; return this; }
 
     /** Sets Disclose Clients */
     public ServerOption setDiscloseClients(boolean discloseClientList) { this.discloseClients = discloseClientList; return this; }
@@ -109,5 +116,7 @@ public class ServerOption {
 
     /** Sets Blacklist */
     public ServerOption setBlackList(ArrayList<String> blackList) { this.blackList = blackList; return this; }
+
+    /** Constructor */
     public ServerOption() {}
 }

@@ -2,7 +2,7 @@ package com.houseofkraft.nsp.networking;
 
 /*
  * Packet Generator for Next Socket Protocol
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ package com.houseofkraft.nsp.networking;
 import com.houseofkraft.nsp.encryption.AES;
 import com.houseofkraft.nsp.tool.ByteTools;
 
+import static com.houseofkraft.nsp.networking.NSPHeader.*;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -30,8 +32,8 @@ public class Packet {
     private AES cryptHandler;
     private int compressionLevel;
     private HashMap<byte[], byte[]> packetArray;
-    private static final byte[] recordSplit = NSPHeader.RECORD_SEPARATOR.toByteArray();
-    private static final byte[] groupSplit = NSPHeader.GROUP_SEPARATOR.toByteArray();
+    private static final byte[] recordSplit = RECORD_SEPARATOR.toByteArray();
+    private static final byte[] groupSplit = GROUP_SEPARATOR.toByteArray();
 
     /**
      * Parses the HashMap into a ByteArray using a forEach loop and ByteArrayOutputStream, and will
@@ -55,7 +57,7 @@ public class Packet {
             }
         });
         byte[] output = bos.toByteArray();
-        if (output[output.length-1] == NSPHeader.GROUP_SEPARATOR.toByte()) {
+        if (output[output.length-1] == GROUP_SEPARATOR.toByte()) {
             output[output.length-1] = 0;
         }
         bos.close();

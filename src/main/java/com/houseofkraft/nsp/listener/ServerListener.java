@@ -2,7 +2,7 @@ package com.houseofkraft.nsp.listener;
 
 /*
  * Server Listener for Next Socket Protocol
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,4 +48,9 @@ public interface ServerListener {
      * This event is called when the server has been shut off for any reason.
      */
     void serverDisconnected();
+
+    /**
+     * This event is called when the server has been turned on successfully.
+     */
+    void serverConnected();
 }

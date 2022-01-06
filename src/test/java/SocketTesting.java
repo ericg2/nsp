@@ -1,6 +1,6 @@
 /*
  * Next Socket Protocol Tester
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,7 +78,9 @@ public class SocketTesting {
                 GlobalVariables.clientConnected--;
                 System.out.println(GlobalVariables.clientDisconnected + " disconnected due to " + reason);
             }
+            
             @Override public void serverDisconnected() {}
+            @Override public void serverConnected() {}
         });
     }
 

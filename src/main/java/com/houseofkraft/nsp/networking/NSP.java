@@ -2,7 +2,7 @@ package com.houseofkraft.nsp.networking;
 
 /*
  * Next Socket Protocol Client
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.regex.Pattern;
 
+import static com.houseofkraft.nsp.networking.NSPHeader.Message.*;
+
 public class NSP {
     private String serverAddress, hostname;
     private Socket socket;
@@ -52,6 +54,16 @@ public class NSP {
 
     /** @return Server Address */
     public String getAddress() { return serverAddress; }
+
+    /** @return Socket Instance */
+    public Socket getSocket() { return socket; }
+
+    /**
+     * Sets a custom Socket to be used for when you need to add modifications to it, such as VPN protect on Android.
+     * @param socket Socket Instance
+     * @return Client Builder
+     */
+    public NSP setSocket(Socket socket) { this.socket = socket; return this; }
 
     /**
      * Changes the Server Address to connect to.
@@ -127,7 +139,7 @@ public class NSP {
      * and DataInputStream/DataOutputStream objects.
      * @param address Server Address
      * @param port Server Port
-     * @param timeout Connection Timeout
+     * @param timeout Connection Timeout in Seconds
      * @throws IOException If there is a socket error.
      */
     private void initializeConnection(String address, int port, int timeout) throws IOException {
@@ -136,7 +148,7 @@ public class NSP {
         if (address.equals("")) { throw new SocketException("Address cannot be empty"); }
 
         this.socket = new Socket();
-        this.socket.connect(new InetSocketAddress(address, port), timeout);
+        this.socket.connect(new InetSocketAddress(address, port), timeout*1000);
         this.dis = new DataInputStream(socket.getInputStream());
         this.dos = new DataOutputStream(socket.getOutputStream());
     }
@@ -164,7 +176,7 @@ public class NSP {
      * @return Client Builder
      */
     public NSP close() throws GeneralSecurityException, IOException {
-        Messages.sendMessage(dos, new Packet().addEntry(NSPHeader.Message.STATUS.toString(), NSPHeader.Message.DISCONNECT.toString()).parseBytes());
+        Messages.sendMessage(dos, new Packet().addEntry(STATUS.toString(), DISCONNECT.toString()).parseBytes());
         socketClose("client disconnection");
         return this;
     }
@@ -181,9 +193,9 @@ public class NSP {
         if (connected) {
             // If changing this mode after Handshake Process, tell the Server while connected.
             if (idMode) {
-                Messages.sendMessage(dos, new ModifiedPacket().addEntry(NSPHeader.Message.STATUS.toString(), "id-mode").parseBytes());
+                Messages.sendMessage(dos, new ModifiedPacket().addEntry(STATUS.toString(), "id-mode").parseBytes());
             } else {
-                Messages.sendMessage(dos, new ModifiedPacket().addEntry(NSPHeader.Message.STATUS.toString(), "ip-mode").parseBytes());
+                Messages.sendMessage(dos, new ModifiedPacket().addEntry(STATUS.toString(), "ip-mode").parseBytes());
             }
         }
         return this;
@@ -201,7 +213,7 @@ public class NSP {
         if (connected) {
             // If changing this mode after Handshake Process, tell the Server while connected.
             Messages.sendMessage(dos, new ModifiedPacket()
-                    .addEntry(NSPHeader.Message.STATUS.toString(), "hostname")
+                    .addEntry(STATUS.toString(), "hostname")
                     .addEntry("hostname", hostname)
                     .parseBytes());
         }
@@ -211,7 +223,7 @@ public class NSP {
     public void getClientList() throws GeneralSecurityException, IOException {
         if (options.getDiscloseClient()) {
             // Attempt to make a request to disclose the Client List.
-            Messages.sendMessage(dos, new ModifiedPacket().addEntry(NSPHeader.Message.STATUS.toString(), "client-list").parseBytes());
+            Messages.sendMessage(dos, new ModifiedPacket().addEntry(STATUS.toString(), "client-list").parseBytes());
         }
     }
 
@@ -285,13 +297,44 @@ public class NSP {
             compressLevel = options.getDeflateLevel();
         }
 
-        acceptPacket = new ModifiedPacket().addEntry(NSPHeader.Message.STATUS.toString(), NSPHeader.Message.ACCEPT.toString());
+        acceptPacket = new ModifiedPacket().addEntry(STATUS.toString(), ACCEPT.toString());
         if (hostname != null) { idMode = true; acceptPacket.addEntry("hostname", hostname); }
         if (idMode) { acceptPacket.addEntry("identify", "id"); }
         Messages.sendMessage(dos, acceptPacket.parseBytes());
 
         this.connected = true;
         this.connectThread.start();
+        return options;
+    }
+
+    /**
+     * Initializes a connection with the Server that is using Private Mode to hide the network, starting the connection
+     * running.
+     *
+     * @param address Server Address
+     * @param port Server Port
+     * @throws IOException If there is an encryption error.
+     * @throws GeneralSecurityException If there is a socket error.
+     */
+    public HandshakeReader connectPrivate(String address, int port, int timeout) throws IOException, GeneralSecurityException {
+        initializeConnection(address, port, timeout);
+
+        if (cryptHandler != null) {
+            parser.setEncryption(cryptHandler);
+        }
+        parser.setDeflate(compressLevel>0);
+
+        Packet acceptPacket = new ModifiedPacket().addEntry(STATUS.toString(), ACCEPT.toString());
+        if (hostname != null) { idMode = true; acceptPacket.addEntry("hostname", hostname); }
+        if (idMode) { acceptPacket.addEntry("identify", "id"); }
+        Messages.sendMessage(dos, acceptPacket.parseBytes());
+
+        // Expect the encrypted Handshake to be sent after the connection is initialized.
+        options = new HandshakeReader(Messages.readMessageString(dis, parser));
+
+        this.connected = true;
+        this.connectThread.start();
+
         return options;
     }
 
@@ -345,7 +388,18 @@ public class NSP {
      * @see #connect(String, int, int)
      */
     public HandshakeReader connect() throws GeneralSecurityException, IOException {
-        return connect(serverAddress, serverPort, 60);
+        return connect(serverAddress, serverPort, 5);
+    }
+
+    /**
+     * Initializes a private connection with the Server using the Address and Port specified in the Server Options.
+     * @return NSP
+     * @throws IOException If there is an encryption error.
+     * @throws GeneralSecurityException If there is a socket error.
+     * @see #connect(String, int, int)
+     */
+    public HandshakeReader connectPrivate() throws GeneralSecurityException, IOException {
+        return connectPrivate(serverAddress, serverPort, 60);
     }
 
     /**
@@ -446,13 +500,14 @@ public class NSP {
 
         /**
          * Reads a Handshake using a specified Packet, and simplify the output.
+         * @param packet HashMap String Input
          */
         public HandshakeReader(HashMap<String, String> packet) {
             this.packet = packet;
             this.clientList = new ArrayList<>();
 
             // First, check if the Client received a disconnect packet which could indicate kicked, banned, etc.
-            if (packet.containsKey(NSPHeader.Message.STATUS.toString()) && packet.containsValue(NSPHeader.Message.DISCONNECT.toString())) {
+            if (packet.containsKey(STATUS.toString()) && packet.containsValue(DISCONNECT.toString())) {
                 connectError = true;
                 String reason = packet.get("reason");
                 if (reason != null) {
@@ -469,6 +524,8 @@ public class NSP {
                         clientList.add(value);
                     }
                     switch (status) {
+                        // Parse the String values into their respective types, and move it into the proper variable
+                        // based on the type.
                         case "online" -> this.totalOnline = Integer.parseInt(value);
                         case "max-user" -> this.maxUsers = Integer.parseInt(value);
                         case "max-con" -> this.maxConcurrent = Integer.parseInt(value);
@@ -510,7 +567,7 @@ public class NSP {
                     public void timerComplete() throws GeneralSecurityException, IOException {
                         // Send the keep-alive message to prevent disconnection due to timeout.
                         Messages.sendMessage(dos, new ModifiedPacket()
-                                .addEntry(NSPHeader.Message.STATUS.toString(), "keep-alive")
+                                .addEntry(STATUS.toString(), "keep-alive")
                                 .parseBytes());
                         timer.startTimer();
                     }
@@ -526,8 +583,8 @@ public class NSP {
                 try {
                     HashMap<String, String> packet = Messages.readMessageString(dis, parser);
                     if (packet != null && packet.size() > 0) {
-                        if (packet.containsKey(NSPHeader.Message.STATUS.toString())) {
-                            switch (packet.get(NSPHeader.Message.STATUS.toString())) {
+                        if (packet.containsKey(STATUS.toString())) {
+                            switch (packet.get(STATUS.toString())) {
                                 case "disconnect" -> socketClose(getSafeValue(packet, "reason"));
                                 case "client-connect" -> {
                                     String identifier = getSafeValue(packet, "identifier");
@@ -547,7 +604,9 @@ public class NSP {
                                             newClientList.add(value);
                                         }
                                     });
-                                    options.clientList = newClientList;
+                                    if (options != null) {
+                                        options.clientList = newClientList;
+                                    }
                                     updateClientList = true;
                                     listeners.forEach(listener -> listener.clientListUpdate(newClientList));
                                 }
@@ -591,5 +650,3 @@ public class NSP {
         public Packet toPacket() { return this; }
     }
 }
-
-

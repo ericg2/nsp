@@ -2,7 +2,7 @@ package com.houseofkraft.nsp.networking;
 
 /*
  * Client Manager for Next Socket Protocol
- * Copyright (c) 2021 houseofkraft
+ * Copyright (c) 2022 houseofkraft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
